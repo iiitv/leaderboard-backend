@@ -26,9 +26,11 @@ class ContributorsListView(generics.ListAPIView):
                 user__id=OuterRef('id'),
             ).annotate(Sum('labels__points')).values('labels__points__sum'),
         ),
-        pr_total_points=PullRequest.objects.filter(
-            user__id=OuterRef('id'),
-        ).annotate(Sum('labels__points')).values('labels__points__sum'),
+        pr_total_points=Subquery(
+            PullRequest.objects.filter(
+                user__id=OuterRef('id'),
+            ).annotate(Sum('labels__points')).values('labels__points__sum'),
+        ),
     ).annotate(
         total_points=F('issue_total_points') + F('pr_total_points'),
     ).order_by('total_points')
