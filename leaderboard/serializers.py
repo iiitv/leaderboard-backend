@@ -1,3 +1,4 @@
+from imp import source_from_cache
 from rest_framework import serializers
 
 from .models import GithubUser, Repository, Label, Issue, PullRequest
@@ -41,7 +42,8 @@ class PullRequestSerializer(serializers.ModelSerializer):
 class GithubUserSerializer(serializers.ModelSerializer):
     issues = IssueSerializer(many=True)
     pull_requests = PullRequestSerializer(many=True)
+    total_points = serializers.IntegerField()
 
     class Meta:
         model = GithubUser
-        fields = ('id', 'username', 'avatar_url', 'points', 'issues', 'pull_requests')
+        fields = ('id', 'username', 'avatar_url', 'total_points', 'issues', 'pull_requests')
