@@ -20,6 +20,7 @@ whitenoise = "==6.2.0"
 gunicorn = "*"
 python-dotenv = "*"
 python-dateutil = "*"
+dj-database-url = "*"
 
 [dev-packages]
 
