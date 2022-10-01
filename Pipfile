@@ -21,6 +21,7 @@ gunicorn = "*"
 python-dotenv = "*"
 python-dateutil = "*"
 dj-database-url = "*"
+psycopg2 = "*"
 
 [dev-packages]
 
