@@ -1,9 +1,13 @@
-from typing import List, Literal, Optional, Dict
+import json
+import re
+from typing import List, Literal, Optional, Dict, Union
 
 import dateutil.parser
+import requests
+from bs4 import BeautifulSoup
 
 from leaderboard.models import Label, Issue, Repository, GithubUser, PullRequest
-from leaderboard.utils import CONTRIBUTION_ACCEPTED_TOPIC
+from leaderboard.utils import CONTRIBUTION_ACCEPTED_TOPIC, GITHUB_TOKEN
 
 
 def get_data_model(data, items: List) -> List['FromDictMixin']:
@@ -87,14 +91,14 @@ class IssueData(FromDictMixin):
             html_url: str,
             user: dict,
             labels: List[Dict],
-            state: Literal['open', 'close'],
+            state: Literal['open', 'closed'],
             locked: bool,
-            # assignee: dict,
-            # assignees: List[UserData],
+            assignee: Optional[dict],
             created_at: str,
             updated_at: str,
             closed_at: Optional[str],
-            parent_data: dict,
+            parent_data: dict = None,
+            repository: Union['RepositoryData', 'Repository'] = None,
             **kwargs
     ):
         self.id = id
@@ -106,11 +110,15 @@ class IssueData(FromDictMixin):
         self.labels = [LabelData(**label) for label in labels]
         self.state = state
         self.locked = locked
-        # self.assignee = UserData(**assignee)
+        self.assignee = UserData(**assignee) if assignee else None
         self.created_at = dateutil.parser.parse(created_at)
         self.updated_at = dateutil.parser.parse(updated_at)
         self.closed_at = dateutil.parser.parse(closed_at) if closed_at else None
-        self.repository: RepositoryData = RepositoryData(**parent_data['repository'])
+        self.repository: Union[RepositoryData, Repository]
+        if repository:
+            self.repository = repository
+        else:
+            self.repository: RepositoryData = RepositoryData(**parent_data['repository'])
         self.extra = kwargs
 
     def to_model(self) -> 'Issue':
@@ -120,7 +128,10 @@ class IssueData(FromDictMixin):
                 'title': self.title,
                 'url': self.url,
                 'locked': self.locked,
-                'repository': self.repository.to_model(),
+                'repository': self.repository.to_model() if isinstance(
+                    self.repository,
+                    RepositoryData
+                ) else self.repository,
                 'state': self.state,
                 'created_at': self.created_at,
                 'updated_at': self.updated_at,
@@ -168,7 +179,8 @@ class PullRequestData(FromDictMixin):
             self,
             id: int,
             url: str,
-            state: Literal['open', 'close'],
+            html_url: str,
+            state: Literal['open', 'closed'],
             locked: bool,
             title: str,
             user: Dict,
@@ -177,15 +189,15 @@ class PullRequestData(FromDictMixin):
             updated_at: str,
             closed_at: Optional[str],
             merged_at: Optional[str],
-            assignee: Dict,
-            # assignees: List[Dict],
             labels: List[Dict],
-            merged: True,
-            parent_data: dict,
+            merged: bool,
+            parent_data: dict = None,
+            repository: Union['RepositoryData', 'Repository'] = None,
             **kwargs,
     ):
         self.id = id
         self.url = url
+        self.html_url = html_url
         self.state = state
         self.locked = locked
         self.title = title
@@ -195,11 +207,13 @@ class PullRequestData(FromDictMixin):
         self.updated_at = dateutil.parser.parse(updated_at)
         self.closed_at = dateutil.parser.parse(closed_at) if closed_at else None
         self.merged_at = dateutil.parser.parse(merged_at) if merged_at else None
-        # self.assignee = UserData(**assignee) if assignee else None
-        # self.assignees = [UserData(**assignee) for assignee in assignees]
         self.labels = [LabelData(**label) for label in labels]
         self.merged = merged
-        self.repository: RepositoryData = RepositoryData(**parent_data['repository'])
+        self.repository: Union[RepositoryData, Repository]
+        if repository:
+            self.repository = repository
+        else:
+            self.repository: RepositoryData = RepositoryData(**parent_data['repository'])
         self.extra = kwargs
 
     def to_model(self) -> 'PullRequest':
@@ -207,6 +221,7 @@ class PullRequestData(FromDictMixin):
             id=self.id,
             defaults={
                 'url': self.url,
+                'html_url': self.html_url,
                 'title': self.title,
                 'body': self.body,
                 'state': self.state,
@@ -215,10 +230,43 @@ class PullRequestData(FromDictMixin):
                 'closed_at': self.closed_at,
                 'merged_at': self.merged_at,
                 'merged': self.merged,
-                'repository': self.repository.to_model(),
+                'repository': self.repository.to_model() if isinstance(
+                    self.repository,
+                    RepositoryData
+                ) else self.repository,
                 'user': self.user.to_model(),
             }
         )[0]
 
         pr.labels.set([label.to_model() for label in self.labels])
+        self.update_linked_issues(pr)
         return pr
+
+    @staticmethod
+    def update_linked_issues(pr: 'PullRequest') -> 'list[Issue]':
+        response = requests.get(pr.html_url, headers={'Authorization': f'token {GITHUB_TOKEN}'})
+        soup = BeautifulSoup(response.text, 'html.parser')
+        issue_form = soup.find("form", {"aria-label": re.compile('Link issues')})
+        issues: 'list[Issue]' = []
+        if not issue_form:
+            return issues
+
+        for issue_tag in issue_form.find_all('a'):
+            try:
+                issue_url = issue_tag['href']
+                issue_id = json.loads(issue_tag["data-hydro-click"])['payload']['issue_id']
+                try:
+                    issue = Issue.objects.get(id=issue_id)
+                except Issue.DoesNotExist:
+                    issue_data = requests.get(
+                        issue_url.replace('https://github.com', 'https://api.github.com/repos'),
+                        headers={'Authorization': f'token {GITHUB_TOKEN}'},
+                    ).json()
+                    issue = IssueData(**issue_data, repository=pr.repository).to_model()
+                issues.append(issue)
+            except KeyError:
+                pass
+
+        pr.issue_set.set(issues)
+
+        return issues

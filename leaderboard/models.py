@@ -1,9 +1,10 @@
 from django.db import models
-from django.db.models import QuerySet
+from django.db.models import QuerySet, Subquery, OuterRef, Sum, F
 
 
-class GithubUserManager(models.Manager):
-    ...
+class States(models.TextChoices):
+    OPEN = 'open'
+    CLOSED = 'closed'
 
 
 class GithubUser(models.Model):
@@ -16,11 +17,27 @@ class GithubUser(models.Model):
 
     @property
     def points(self):
-        return sum(
-            pr.points for pr in self.pullrequest_set.all()
-        ) + sum(
-            issue.points for issue in self.issue_set.all()
-        )
+        return GithubUser.objects.filter(id=self.id).annotate(
+            issue_total_points=Subquery(
+                Issue.objects.filter(
+                    user__id=OuterRef('id'),
+                ).annotate(Sum('issue_opening_points')).values('issue_opening_points__sum'),
+            ),
+            pr_merged_label_points=Subquery(
+                PullRequest.objects.filter(
+                    user__id=OuterRef('id'),
+                    merged=True,
+                ).annotate(Sum('issue__labels__points')).values('issue__labels__points__sum'),
+            ),
+            pr_merged_points=Subquery(
+                PullRequest.objects.filter(
+                    user__id=OuterRef('id'),
+                    merged=True,
+                ).annotate(Sum('merge_points')).values('merge_points__sum'),
+            ),
+        ).annotate(
+            total_points=F('issue_total_points') + F('pr_merged_label_points') + F('pr_merged_points'),
+        ).values('total_points').first()['total_points']
 
     def issues(self) -> QuerySet['Issue']:
         return self.issue_set.filter(
@@ -63,15 +80,14 @@ class Issue(models.Model):
     labels = models.ManyToManyField(Label)
     locked = models.BooleanField(default=False)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE)
-    state = models.CharField(max_length=255, choices=[('open', 'open'), ('closed', 'closed')])
+    state = models.CharField(max_length=255, choices=States.choices)
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
     closed_at = models.DateTimeField(null=True, blank=True)
     user = models.ForeignKey(GithubUser, on_delete=models.CASCADE)
-
-    @property
-    def points(self):
-        return self.labels.aggregate(models.Sum('points'))['points__sum'] or 0
+    assignee = models.ForeignKey(GithubUser, on_delete=models.CASCADE, null=True, blank=True, related_name='assignee')
+    issue_opening_points = models.IntegerField(default=10)
+    pr = models.ForeignKey('PullRequest', on_delete=models.CASCADE, null=True, blank=True)
 
     @property
     def feature_labels(self):
@@ -84,21 +100,36 @@ class Issue(models.Model):
 class PullRequest(models.Model):
     id = models.IntegerField(primary_key=True)
     url = models.URLField()
+    html_url = models.URLField()
     title = models.TextField()
     body = models.TextField()
-    state = models.CharField(max_length=255, choices=[('open', 'open'), ('closed', 'closed')])
+    state = models.CharField(max_length=255, choices=States.choices)
     created_at = models.DateTimeField()
     updated_at = models.DateTimeField()
     closed_at = models.DateTimeField(null=True, blank=True)
     merged_at = models.DateTimeField(null=True, blank=True)
-    merged = models.BooleanField(default=False)
+    merged = models.BooleanField()
     labels = models.ManyToManyField(Label)
     user = models.ForeignKey(GithubUser, on_delete=models.CASCADE)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE)
 
+    merge_points = models.IntegerField(default=10)
+
     @property
     def points(self):
-        return self.labels.aggregate(models.Sum('points'))['points__sum'] or 0
+        points = 0
+        if self.merged:
+            points += self.merge_points
+            points += self.issue_set.annotate(
+                labels_points=Subquery(
+                    Issue.objects.filter(
+                        id=OuterRef('id'),
+                    ).annotate(Sum('labels__points')).values('labels__points__sum'),
+                )
+            ).aggregate(
+                labels_point_sum=models.Sum('labels_points')
+            )['labels_point_sum'] or 0
+        return points
 
     @property
     def feature_labels(self):

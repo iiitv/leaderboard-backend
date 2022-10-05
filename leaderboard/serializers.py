@@ -1,4 +1,3 @@
-from imp import source_from_cache
 from rest_framework import serializers
 
 from .models import GithubUser, Repository, Label, Issue, PullRequest
@@ -17,25 +16,28 @@ class RepositorySerializer(serializers.ModelSerializer):
 
 
 class IssueSerializer(serializers.ModelSerializer):
-    # labels_points = serializers.IntegerField(required=False)
+    points = serializers.IntegerField(source='issue_opening_points')
     labels = LabelSerializer(many=True, source='feature_labels')
-    # repository = RepositorySerializer()
+
+    repository = RepositorySerializer()
 
     class Meta:
         model = Issue
         fields = (
-            'id', 'title', 'url', 'labels', 'locked',  'state', 'created_at', 'updated_at', 'closed_at',
+            'id', 'title', 'url', 'labels', 'locked', 'state', 'created_at', 'updated_at', 'closed_at', 'points',
+            'repository'
         )
 
 
 class PullRequestSerializer(serializers.ModelSerializer):
     labels = LabelSerializer(many=True, source='feature_labels')
+    points = serializers.IntegerField()
     repository = RepositorySerializer()
 
     class Meta:
         model = PullRequest
         fields = (
-            'id', 'title', 'url', 'labels', 'state', 'created_at', 'updated_at', 'closed_at', 'points', 'repository',
+            'id', 'title', 'url', 'labels', 'state', 'created_at', 'updated_at', 'closed_at', 'points', 'repository'
         )
 
 
