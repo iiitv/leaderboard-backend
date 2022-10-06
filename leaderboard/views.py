@@ -3,7 +3,6 @@ import hmac
 import logging
 from typing import Optional
 
-from django.db.models import Sum, Subquery, OuterRef, F
 from rest_framework import status
 from rest_framework import views, generics
 from rest_framework.exceptions import NotAcceptable
@@ -11,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from .data_models import LabelData, IssueData, RepositoryData, get_data_model, PullRequestData
-from .models import Label, Issue, PullRequest, GithubUser
+from .models import Label, GithubUser
 from .serializers import GithubUserSerializer
 from .utils import GITHUB_WEBHOOK_SECRET, CONTRIBUTION_ACCEPTED_TOPIC
 
@@ -20,27 +19,12 @@ logger = logging.getLogger(__name__)
 
 class ContributorsListView(generics.ListAPIView):
     serializer_class = GithubUserSerializer
-    queryset = GithubUser.objects.annotate(
-        issue_total_points=Subquery(
-            Issue.objects.filter(
-                user__id=OuterRef('id'),
-            ).annotate(Sum('issue_opening_points')).values('issue_opening_points__sum'),
-        ),
-        pr_merged_label_points=Subquery(
-            PullRequest.objects.filter(
-                user__id=OuterRef('id'),
-                merged=True,
-            ).annotate(Sum('issue__labels__points')).values('issue__labels__points__sum'),
-        ),
-        pr_merged_points=Subquery(
-            PullRequest.objects.filter(
-                user__id=OuterRef('id'),
-                merged=True,
-            ).annotate(Sum('merge_points')).values('merge_points__sum'),
-        ),
-    ).annotate(
-        total_points=F('issue_total_points') + F('pr_merged_label_points') + F('pr_merged_points'),
-    ).order_by('total_points')
+    queryset = GithubUser.objects.all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # TODO: calculate in query
+        return sorted(queryset, key=lambda x: x.points, reverse=True)
 
 
 class GithubWebhookListenerView(views.APIView):

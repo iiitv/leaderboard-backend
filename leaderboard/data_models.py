@@ -189,7 +189,7 @@ class PullRequestData(FromDictMixin):
             updated_at: str,
             closed_at: Optional[str],
             merged_at: Optional[str],
-            labels: List[Dict],
+            # labels: List[Dict],
             merged: bool,
             parent_data: dict = None,
             repository: Union['RepositoryData', 'Repository'] = None,
@@ -207,7 +207,7 @@ class PullRequestData(FromDictMixin):
         self.updated_at = dateutil.parser.parse(updated_at)
         self.closed_at = dateutil.parser.parse(closed_at) if closed_at else None
         self.merged_at = dateutil.parser.parse(merged_at) if merged_at else None
-        self.labels = [LabelData(**label) for label in labels]
+        # self.labels = [LabelData(**label) for label in labels]
         self.merged = merged
         self.repository: Union[RepositoryData, Repository]
         if repository:
@@ -238,7 +238,7 @@ class PullRequestData(FromDictMixin):
             }
         )[0]
 
-        pr.labels.set([label.to_model() for label in self.labels])
+        # pr.labels.set([label.to_model() for label in self.labels])
         self.update_linked_issues(pr)
         return pr
 

@@ -17,27 +17,9 @@ class GithubUser(models.Model):
 
     @property
     def points(self):
-        return GithubUser.objects.filter(id=self.id).annotate(
-            issue_total_points=Subquery(
-                Issue.objects.filter(
-                    user__id=OuterRef('id'),
-                ).annotate(Sum('issue_opening_points')).values('issue_opening_points__sum'),
-            ),
-            pr_merged_label_points=Subquery(
-                PullRequest.objects.filter(
-                    user__id=OuterRef('id'),
-                    merged=True,
-                ).annotate(Sum('issue__labels__points')).values('issue__labels__points__sum'),
-            ),
-            pr_merged_points=Subquery(
-                PullRequest.objects.filter(
-                    user__id=OuterRef('id'),
-                    merged=True,
-                ).annotate(Sum('merge_points')).values('merge_points__sum'),
-            ),
-        ).annotate(
-            total_points=F('issue_total_points') + F('pr_merged_label_points') + F('pr_merged_points'),
-        ).values('total_points').first()['total_points']
+        points = sum([issue.points for issue in self.issue_set.all()])
+        points += sum([pr.points for pr in self.pullrequest_set.all()])
+        return points
 
     def issues(self) -> QuerySet['Issue']:
         return self.issue_set.filter(
@@ -51,10 +33,7 @@ class GithubUser(models.Model):
     def pull_requests(self):
         return self.pullrequest_set.filter(
             repository__consider_contributions=True,
-        ).annotate(
-            labels_points=models.Sum('labels__points')
-        ).filter(
-            labels_points__gt=0
+            merged=True,
         )
 
 
@@ -93,6 +72,12 @@ class Issue(models.Model):
     def feature_labels(self):
         return self.labels.filter(points__gt=0)
 
+    @property
+    def points(self):
+        if not self.feature_labels.aggregate(Sum('points'))['points__sum']:
+            return 0
+        return self.issue_opening_points
+
     def __str__(self):
         return self.title
 
@@ -109,7 +94,7 @@ class PullRequest(models.Model):
     closed_at = models.DateTimeField(null=True, blank=True)
     merged_at = models.DateTimeField(null=True, blank=True)
     merged = models.BooleanField()
-    labels = models.ManyToManyField(Label)
+    # labels = models.ManyToManyField(Label)
     user = models.ForeignKey(GithubUser, on_delete=models.CASCADE)
     repository = models.ForeignKey(Repository, on_delete=models.CASCADE)
 
@@ -119,7 +104,6 @@ class PullRequest(models.Model):
     def points(self):
         points = 0
         if self.merged:
-            points += self.merge_points
             points += self.issue_set.annotate(
                 labels_points=Subquery(
                     Issue.objects.filter(
@@ -129,11 +113,11 @@ class PullRequest(models.Model):
             ).aggregate(
                 labels_point_sum=models.Sum('labels_points')
             )['labels_point_sum'] or 0
-        return points
 
-    @property
-    def feature_labels(self):
-        return self.labels.filter(points__gt=0)
+            if points:
+                points += self.merge_points
+
+        return points
 
     def __str__(self):
         return self.title
