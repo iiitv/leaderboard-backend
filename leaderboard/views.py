@@ -3,7 +3,6 @@ import hmac
 import logging
 from typing import Optional
 
-from django.db.models import Sum, Subquery, OuterRef, F
 from rest_framework import status
 from rest_framework import views, generics
 from rest_framework.exceptions import NotAcceptable
@@ -11,7 +10,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 
 from .data_models import LabelData, IssueData, RepositoryData, get_data_model, PullRequestData
-from .models import Label, Issue, PullRequest, GithubUser
+from .models import Label, GithubUser
 from .serializers import GithubUserSerializer
 from .utils import GITHUB_WEBHOOK_SECRET, CONTRIBUTION_ACCEPTED_TOPIC
 
@@ -20,20 +19,12 @@ logger = logging.getLogger(__name__)
 
 class ContributorsListView(generics.ListAPIView):
     serializer_class = GithubUserSerializer
-    queryset = GithubUser.objects.annotate(
-        issue_total_points=Subquery(
-            Issue.objects.filter(
-                user__id=OuterRef('id'),
-            ).annotate(Sum('labels__points')).values('labels__points__sum'),
-        ),
-        pr_total_points=Subquery(
-            PullRequest.objects.filter(
-                user__id=OuterRef('id'),
-            ).annotate(Sum('labels__points')).values('labels__points__sum'),
-        ),
-    ).annotate(
-        total_points=F('issue_total_points') + F('pr_total_points'),
-    ).order_by('total_points')
+    queryset = GithubUser.objects.all()
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        # TODO: calculate in query
+        return sorted(queryset, key=lambda x: x.points, reverse=True)
 
 
 class GithubWebhookListenerView(views.APIView):
@@ -73,28 +64,14 @@ class GithubWebhookListenerView(views.APIView):
 
         return True
 
-    def _handle_issues_labeled(self, request: Request):
-        label, issue, repository = get_data_model(request.data, [LabelData, IssueData, RepositoryData])
+    def _handle_issues(self, request: Request):
+        issue, repository = get_data_model(request.data, [IssueData, RepositoryData])
         self.to_consider(repository=repository)
-        label.to_model()
         issue.to_model()
 
-    def _handle_issues_unlabeled(self, request: Request):
-        label, issue, repository = get_data_model(request.data, [LabelData, IssueData, RepositoryData])
+    def _handle_pull_request(self, request: Request):
+        pull_request, repository = get_data_model(request.data, [PullRequestData, RepositoryData])
         self.to_consider(repository=repository)
-        label.to_model()
-        issue.to_model()
-
-    def _handle_pull_request_labeled(self, request: Request):
-        pull_request, label, repository = get_data_model(request.data, [PullRequestData, LabelData, RepositoryData])
-        self.to_consider(repository=repository)
-        label.to_model()
-        pull_request.to_model()
-
-    def _handle_pull_request_unlabeled(self, request: Request):
-        pull_request, label, repository = get_data_model(request.data, [PullRequestData, LabelData, RepositoryData])
-        self.to_consider(repository=repository)
-        label.to_model()
         pull_request.to_model()
 
     def post(self, request: Request, *args, **kwargs):
@@ -104,9 +81,11 @@ class GithubWebhookListenerView(views.APIView):
         event = request.headers.get('X-GitHub-Event')
         action = request.data.get('action')
 
+        handler = None
         if action:
             handler = getattr(self, f"_handle_{event}_{action}", None)
-        else:
+
+        if not handler:
             handler = getattr(self, f"_handle_{event}", None)
 
         if handler:

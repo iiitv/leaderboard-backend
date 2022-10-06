@@ -30,9 +30,9 @@ class RepositoryAdmin(admin.ModelAdmin):
 @admin.register(Issue)
 class IssueAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'title', 'url', 'locked', 'repository', 'state', 'created_at', 'updated_at', 'closed_at', 'user')
+        'id', 'title', 'url', 'locked', 'repository', 'state', 'pr', 'user')
     search_fields = (
-        'title', 'url', 'state', 'created_at', 'updated_at', 'closed_at', 'user')
+        'title', 'url', 'state', 'user')
 
     def has_add_permission(self, request):
         return False
@@ -41,9 +41,9 @@ class IssueAdmin(admin.ModelAdmin):
 @admin.register(PullRequest)
 class PullRequestAdmin(admin.ModelAdmin):
     list_display = (
-        'id', 'title', 'url', 'state', 'created_at', 'updated_at', 'closed_at', 'user')
+        'id', 'title', 'url', 'state', 'user', 'merged')
     search_fields = (
-        'id', 'title', 'url', 'state', 'created_at', 'updated_at', 'closed_at', 'user')
+        'id', 'title', 'url', 'user')
 
     def has_add_permission(self, request):
         return False
