@@ -133,6 +133,7 @@ class IssueData(FromDictMixin):
                     RepositoryData
                 ) else self.repository,
                 'state': self.state,
+                'assignee': self.assignee.to_model() if self.assignee else None,
                 'created_at': self.created_at,
                 'updated_at': self.updated_at,
                 'closed_at': self.closed_at,
