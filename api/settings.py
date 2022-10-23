@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 
     "rest_framework",
+    "drf_spectacular",
 
     "leaderboard",
 ]
@@ -149,8 +150,15 @@ REST_FRAMEWORK = {
     "DEFAULT_PARSER_CLASSES": [
         "api.utils.JSONParser",
     ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
 
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Leaderboard API',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
 
 # Test Runner Config
 class HerokuDiscoverRunner(DiscoverRunner):
