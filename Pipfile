@@ -23,6 +23,7 @@ python-dateutil = "*"
 dj-database-url = "*"
 psycopg2 = "*"
 beautifulsoup4 = "==4.11.1"
+drf-spectacular = "==0.24.2"
 
 [dev-packages]
 
