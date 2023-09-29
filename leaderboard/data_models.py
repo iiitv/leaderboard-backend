@@ -1,6 +1,6 @@
 import json
 import re
-from typing import List, Literal, Optional, Dict, Union
+from typing import List, Optional, Dict, Union
 
 import dateutil.parser
 import requests
