@@ -24,7 +24,8 @@ class FromDictMixin:
 
     @classmethod
     def from_dict(cls, data: Dict):
-        if key := getattr(cls, 'key', None):
+        key = getattr(cls, 'key', None)
+        if key is not None:
             # noinspection PyArgumentList
             return cls(**data[key], parent_data=data)
         # noinspection PyArgumentList
